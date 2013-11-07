@@ -1,3 +1,7 @@
+//20131106 kojh created
+// https://github.com/jeremyko/radiusPacketMaker
+#include <stdlib.h>
+
 #include <iomanip> 
 #include <stdio.h>
 #include <string.h>
@@ -46,7 +50,7 @@ void CharToHex(const char s, char* out )
 {   
     char szTemp[10];
     memset(&szTemp, 0x00, sizeof(szTemp));
-    sprintf_s(szTemp, "0x%02X\n", s);
+    snprintf(szTemp, sizeof(szTemp ), "0x%02X\n", s);
     //printf("-- %s\n",szTemp);
     strcpy(out, szTemp  );    
 }
@@ -54,8 +58,8 @@ void CharToHex(const char s, char* out )
 ///////////////////////////////////////////////////////////////////////////////
 bool SaveFile ( char* output_path)
 {
-    cout << "gBufferIndex:" << gBufferIndex << "\n";
-    cout << "gTotalWriteLen:" << gTotalWriteLen << "\n";
+    //cout << "gBufferIndex:" << gBufferIndex << "\n";
+    cout << "total packet size:" << gTotalWriteLen << "\n";
 
     //set header length
     char output[100];
@@ -165,7 +169,7 @@ void ConvertStringToHexaByteAndSetIntoWriteBuffer( int nLen,  string& tempStr)
 ///////////////////////////////////////////////////////////////////////////////
 void ConvertHexStringToHexaByteAndSetIntoWriteBuffer( int nLen,  string& tempStr)
 {
-    // 16진수 값이 직접 들어있다...
+    // 16.. .. .. .......
     char* p = (char*)tempStr.c_str();
     for(int i = 0; i < nLen - 2; i++) //-2 : except for : type, length 
     {
@@ -257,6 +261,7 @@ size_t Trimwhitespace(char* out, size_t len, const char* str)
 ///////////////////////////////////////////////////////////////////////////////
 int main(int argc, char* argv[])
 {    
+    //////////////////////////////////////////////////////////////////////////
     //init
     gBufferIndex = 0;
     gTotalWriteLen = 0;
@@ -266,29 +271,36 @@ int main(int argc, char* argv[])
     {
         printf(" usage:\n");
         printf(" %s [input_data_file] [output_udr_file]\n", argv[0] );
+        return 0;
     }
     
-    string temp = "";
-    
+    //////////////////////////////////////////////////////////////////////////
     //read file    
     std::ifstream infile(argv[1]); 
     
     vector<string> vecOfHeader;
     vector<string> vecOfLine;
-    std::string line;
+    string line;
 
     while (std::getline(infile, line))
     {
-        if( line == "" ) //this is blank
+        if((line.c_str())[0] == 13 )
         {
+			//printf("this is carriage return!\n" );
             continue;
         }
 
-        char szReadLine [255];
+        char szReadLine [1024];
         Trimwhitespace(szReadLine, sizeof(szReadLine), line.c_str() );
 
         if( szReadLine[0] == '#' ) //this is comment
         {
+            continue;
+        }
+
+        if( 0 == strncmp( szReadLine, "header_length", 12 )  ) //header length is calculated by program
+        {
+            printf("header length is calculated by program! -> ignore yours!\n");
             continue;
         }
 
@@ -323,7 +335,7 @@ int main(int argc, char* argv[])
     */
     for(std::vector<string>::iterator it = vecOfHeader.begin(); it != vecOfHeader.end(); ++it) 
     {
-        cout << "header: " << *it << "\n";       
+        //cout << "header: " << *it << "\n";       
         stringstream tempStringStream(*it);
         string tempStr;
         vector<string> vecOfElement;
@@ -340,14 +352,15 @@ int main(int argc, char* argv[])
             /*
             header_code|1|04
             header_Identifier|1|55
-            header_length|2|400
             header_authenticator|16|1f437ed89f17abd4c34adb76b1f1300f
             */
             if( nIndex == 2 ) //need just value
             {                
-                if( vecOfElement[0] == "header_authenticator" )
+				if (! vecOfElement[0].compare(0, strlen("header_authenticator"), "header_authenticator"))
                 {
-                    //16 byte , 이건 16진수 값이 직접 들어있다...
+                    gTotalWriteLen+=2; //header length . ... ... ... .. .... .. , 2 byte.. ..
+                    gBufferIndex+=2; //header length . ... ... ... .. .... .. , 2 byte move  
+                    //16 byte , .. 16.. .. .. .......
                     char* p = (char*)strElement.c_str();
                     for(int i = 0; i < 16; i++)
                     {
@@ -364,6 +377,7 @@ int main(int argc, char* argv[])
 
                         p +=2;
                     }                    
+                    //printf("gTotalWriteLen add 16 [%d] buffer[%d]\n", gTotalWriteLen,gBufferIndex ); //debug
                     gTotalWriteLen +=16;
                 }
                 else
@@ -371,6 +385,7 @@ int main(int argc, char* argv[])
                     // vecOfElement[1] --> length
                     int len= atoi( vecOfElement[1].c_str() );
                     ConvertIntToHexaByteAndSetIntoWriteBuffer( atoi( vecOfElement[1].c_str() ) , tempStr );
+                    //printf("gTotalWriteLen add %d [%d] [%d]\n",len,  gTotalWriteLen,gBufferIndex ); //debug
                     gTotalWriteLen +=len;
                 }                
             } 
@@ -403,7 +418,7 @@ int main(int argc, char* argv[])
             {
                 if( strElement == "26" ) 
                 {
-                    cout << "Type: Vendor specific!" << "\n";        
+                    //cout << "Type: Vendor specific!" << "\n";        
                     bVendorSpecific = true;
                     /*
                     * vendor specific
@@ -426,12 +441,14 @@ int main(int argc, char* argv[])
                 }
 
                 ConvertIntToHexaByteAndSetIntoWriteBuffer( TYPE_FILED_LEN, strElement);
+				//printf("gTotalWriteLen add %d [%d] [%d]\n",TYPE_FILED_LEN,  gTotalWriteLen, gBufferIndex ); //debug
                 gTotalWriteLen +=TYPE_FILED_LEN;                
             }    
             //--------------------------------
             else if( nIndex == 1 )
             {                
                 ConvertIntToHexaByteAndSetIntoWriteBuffer( LENGTH_FIELD_LEN, strElement  );
+				//printf("gTotalWriteLen add %d [%d] [%d]\n",TYPE_FILED_LEN,  gTotalWriteLen, gBufferIndex ); //debug
                 gTotalWriteLen +=LENGTH_FIELD_LEN;                
             }               
             //--------------------------------
@@ -440,28 +457,31 @@ int main(int argc, char* argv[])
                 if( bVendorSpecific ) 
                 {   //vendor-id, 4byte                 
                     ConvertIntToHexaByteAndSetIntoWriteBuffer( 4 ,  strElement  );  
+					//printf("gTotalWriteLen add %d [%d] [%d]\n",4,  gTotalWriteLen, gBufferIndex ); //debug
                     gTotalWriteLen +=4;                    
                 }
                 else
                 {                             
                     int len = atoi( vecOfElement[1].c_str() ) ;
 
-                    if( vecOfElement[3] == "string" )
+                    if (! vecOfElement[3].compare(0, strlen("string"), "string"))
                     {
                         ConvertStringToHexaByteAndSetIntoWriteBuffer ( len -2   , strElement);
                     }
-                    else if( vecOfElement[3] == "numeric" )
+                    else if (! vecOfElement[3].compare(0, strlen("numeric"), "numeric"))
                     {
                         ConvertIntToHexaByteAndSetIntoWriteBuffer( len -2  ,  strElement  );   
                     }
-                    else if( vecOfElement[3] == "hexa" )
+                    else if (! vecOfElement[3].compare(0, strlen("hexa"), "hexa"))
                     {
                         ConvertHexStringToHexaByteAndSetIntoWriteBuffer ( len   , strElement);
                     }                                       
                     else
                     {
+                        printf("Error!![%s]\n", vecOfElement[3].c_str() );
                     }
 
+					//printf("gTotalWriteLen add %d [%d] [%d]\n",len-2,  gTotalWriteLen , gBufferIndex); //debug
                     gTotalWriteLen +=len-2;                    
                 }
             }   
@@ -473,12 +493,14 @@ int main(int argc, char* argv[])
                 { 
                     //vendor-type
                     ConvertIntToHexaByteAndSetIntoWriteBuffer( TYPE_FILED_LEN, strElement);
+					//printf("gTotalWriteLen add %d [%d] [%d]\n",TYPE_FILED_LEN,  gTotalWriteLen , gBufferIndex ); //debug
                     gTotalWriteLen +=TYPE_FILED_LEN;                    
                 }
                 else if( nIndex == 4 )
                 { 
                     //Vendor length
                     ConvertIntToHexaByteAndSetIntoWriteBuffer( LENGTH_FIELD_LEN, strElement  );
+					//printf("gTotalWriteLen add %d [%d] [%d]\n",LENGTH_FIELD_LEN,  gTotalWriteLen, gBufferIndex ); //debug
                     gTotalWriteLen +=LENGTH_FIELD_LEN;                    
                 }
                 else if( nIndex == 5 )
@@ -489,18 +511,19 @@ int main(int argc, char* argv[])
                     //# - length include type|length+value
                     //# - value_type : one of following string value
                     //#   "string", "numeric", "hexa"
-                    if( vecOfElement[6] == "string" )
+                    if (! vecOfElement[6].compare(0, strlen("string"), "string"))
                     {
                         ConvertStringToHexaByteAndSetIntoWriteBuffer ( len -2   , strElement);
                     }
-                    else if( vecOfElement[6] == "numeric" )
+                    else if (! vecOfElement[6].compare(0, strlen("numeric"), "numeric"))
                     {
                         ConvertIntToHexaByteAndSetIntoWriteBuffer( len - 2, strElement  );
                     }
-                    else if( vecOfElement[6] == "hexa" )
+                    else if (! vecOfElement[6].compare(0, strlen("hexa"), "hexa"))
                     {
                         ConvertHexStringToHexaByteAndSetIntoWriteBuffer ( len   , strElement);
                     }
+					//printf("gTotalWriteLen add %d [%d] [%d]\n",len-2,  gTotalWriteLen, gBufferIndex ); //debug
                     gTotalWriteLen +=len-2;                     
                 }
             }
@@ -511,6 +534,7 @@ int main(int argc, char* argv[])
 
     //write file    
     SaveFile (argv[2]);
+    //SaveFile ("test_udr_out");
 
     return 0;
 }
